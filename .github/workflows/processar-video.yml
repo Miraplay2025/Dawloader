@@ -1,0 +1,56 @@
+name: Processar Vídeo
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_url:
+        description: 'URL do vídeo (YouTube, Facebook, Filemoon)'
+        required: true
+      start_time:
+        description: 'Início do recorte (opcional, ex: 00:01:00)'
+        required: false
+        default: ''
+      end_time:
+        description: 'Fim do recorte (opcional, ex: 00:02:00)'
+        required: false
+        default: ''
+      destino:
+        description: 'Destino (drive ou local)'
+        required: false
+        default: 'drive'
+
+jobs:
+  processar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🛒 Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: 📄 Criar arquivo cookies.txt
+        run: echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
+
+      - name: 🟨 Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 🟩 Instalar dependências Node.js
+        run: npm install puppeteer
+
+      - name: 🐍 Instalar yt-dlp
+        run: pip install -U yt-dlp
+
+      - name: 🔧 Instalar FFmpeg
+        run: sudo apt update && sudo apt install -y ffmpeg
+
+      - name: ⚙️ Executar script Node.js
+        run: |
+          node script.js "${{ github.event.inputs.file_url }}" "${{ github.event.inputs.start_time }}" "${{ github.event.inputs.end_time }}" "${{ github.event.inputs.destino }}" "cookies.txt"
+
+      - name: 📦 Salvar como artefato (se destino for local)
+        if: ${{ github.event.inputs.destino == 'local' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: video_final
+          path: final.mp4
