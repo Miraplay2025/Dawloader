@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel de Automação Vidnoz</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #121212; color: #fff; margin: 20px; }
+    .container { max-width: 900px; margin: auto; }
+    .card { background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    input, textarea, button { width: 100%; padding: 10px; margin-top: 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid #333; background: #2a2a2a; color: #fff; }
+    button { background: #007bff; color: white; border: none; font-weight: bold; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    #btnConfirmar { background: #28a745; display: none; margin-top: 15px; font-size: 16px; padding: 15px; }
+    #btnConfirmar:hover { background: #218838; }
+    #logs { background: #000; color: #00ff00; font-family: monospace; height: 180px; overflow-y: scroll; padding: 10px; border-radius: 4px; border: 1px solid #333; }
+    #previewImg { max-width: 100%; border: 2px solid #007bff; border-radius: 4px; display: none; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>Automação Vidnoz - Painel de Controle</h2>
+
+  <div class="card">
+    <form id="formAutomation">
+      <label>URL Direta da Página:</label>
+      <input type="url" id="targetUrl" required value="https://pt.vidnoz.com/create-avatar.html">
+
+      <label>Arquivo de Áudio (MP3/WAV):</label>
+      <input type="file" id="audioFile" accept="audio/*" required>
+
+      <label>Cookies da Sessão (JSON Array):</label>
+      <textarea id="cookiesJson" rows="5" placeholder='[{"name":"session", "value":"..."}]' required></textarea>
+
+      <button type="submit" id="btnIniciar">Iniciar Processo</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Status e Logs em Tempo Real</h3>
+    <div id="logs"></div>
+
+    <button id="btnConfirmar">✅ CONFIRMAR E PROSSEGUIR PARA PRÓXIMA ETAPA</button>
+  </div>
+
+  <div class="card">
+    <h3>Último Screenshot Capturado</h3>
+    <img id="previewImg" src="" alt="Screenshot">
+  </div>
+</div>
+
+<script>
+  const socket = io();
+  let audioPathServidor = null;
+
+  const logsDiv = document.getElementById('logs');
+  const btnConfirmar = document.getElementById('btnConfirmar');
+  const previewImg = document.getElementById('previewImg');
+  const btnIniciar = document.getElementById('btnIniciar');
+
+  function addLog(msg) {
+    const p = document.createElement('p');
+    p.style.margin = "2px 0";
+    p.innerHTML = msg;
+    logsDiv.appendChild(p);
+    logsDiv.scrollTop = logsDiv.scrollHeight;
+  }
+
+  socket.on('log', (data) => addLog(data));
+
+  socket.on('screenshot', (base64Img) => {
+    previewImg.src = base64Img;
+    previewImg.style.display = 'block';
+  });
+
+  socket.on('solicitar_confirmacao', () => {
+    btnConfirmar.style.display = 'block';
+  });
+
+  btnConfirmar.addEventListener('click', () => {
+    btnConfirmar.style.display = 'none';
+    socket.emit('usuario_confirmou');
+  });
+
+  document.getElementById('formAutomation').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btnIniciar.disabled = true;
+
+    const audioInput = document.getElementById('audioFile').files[0];
+    const formData = new FormData();
+    formData.append('audio', audioInput);
+
+    addLog('📤 Enviando arquivo de áudio ao servidor...');
+
+    try {
+      const res = await fetch('/api/start', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (data.success) {
+        audioPathServidor = data.audioPath;
+        addLog('✅ Áudio recebido no servidor com sucesso.');
+
+        // Dispara a automação no Puppeteer via WebSockets
+        socket.emit('iniciar_automacao', {
+          targetUrl: document.getElementById('targetUrl').value,
+          cookies: document.getElementById('cookiesJson').value,
+          audioPath: audioPathServidor
+        });
+      } else {
+        addLog('❌ Erro no upload: ' + data.error);
+        btnIniciar.disabled = false;
+      }
+    } catch (err) {
+      addLog('❌ Erro de conexão com o servidor: ' + err.message);
+      btnIniciar.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>
